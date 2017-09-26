@@ -22,6 +22,11 @@
         </activity>
         <activity android:name=".DetailActivity">
         </activity>
+
+        <provider
+            android:name=".database.MovieProvider"
+            android:authorities="com.dan.hotpopcorn"
+            android:exported="false"></provider>
     </application>
 
 

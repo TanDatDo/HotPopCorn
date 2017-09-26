@@ -13,7 +13,7 @@ android {
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
 
         def STRING = "String"
-        buildConfigField STRING, "API_KEY", "\"enter your API_KEY here\""
+        buildConfigField STRING, "API_KEY", "\"1c6f7c09f181fd3ff48fb774ebc7809a\""
         buildConfigField STRING, "ROOT_URL", "\"http://api.themoviedb.org\""
         buildConfigField STRING, "IMAGE_URL", "\"http://image.tmdb.org/t/p\""
     }

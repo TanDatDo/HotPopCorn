@@ -11,4 +11,9 @@
     <string name="release_on">Release on </string>
     <string name="Rating">Rating:</string>
     <string name="no_internet">No internet Connection</string>
+    <string name="delete_toast">The movie is deleted from favorite list</string>
+    <string name="add_fav_toast">Successfully add the movie to favorite</string>
+    <string name="sort_option_favorite">Sort by Favorite</string>
+    <string name="no_connection">No internet connection</string>
+    <string name="no_favorite">Found no favorite movies</string>
 </resources>
