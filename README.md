@@ -14,4 +14,4 @@ FEATURES
 •Parcelable Objects, and Activity Life-cycle.
 
 
-[![Watch the video](](https://www.youtube.com/watch?v=CP-ILlrFtHM)
+[![Watch the video](https://github.com/TanDatDo/HotPopCorn/blob/master/app/src/main/res/drawable/popcorn.jpg)](https://www.youtube.com/watch?v=CP-ILlrFtHM)
