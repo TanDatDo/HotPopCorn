@@ -15,7 +15,9 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
+import android.support.design.widget.AppBarLayout;
 import android.support.design.widget.FloatingActionButton;
+import android.support.v4.widget.NestedScrollView;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
@@ -45,7 +47,6 @@ import retrofit.RestAdapter;
 import retrofit.RetrofitError;
 import retrofit.client.Response;
 
-import static com.dan.hotpopcorn.ListActivity.LOG_TAG;
 import static com.dan.hotpopcorn.model.Movie.TMDB_IMAGE_PATH;
 
 /**
@@ -55,8 +56,15 @@ import static com.dan.hotpopcorn.model.Movie.TMDB_IMAGE_PATH;
 public class DetailActivity extends AppCompatActivity implements LoaderManager.LoaderCallbacks<Cursor> {
 
 
+    //constants
     private static final int EXISTING_MOVIE_LOADER = 0;
+    //  two static variable,
+    public static int scrollX = 0;
+    public static int scrollY = -1;
+    //Bind View
     Movie movie;
+    @Bind(R.id.app_bar)
+    AppBarLayout appBarLayout;
     @Bind(R.id.toolImage)
     ImageView toolImage;
     @Bind(R.id.detail_image_view)
@@ -73,17 +81,63 @@ public class DetailActivity extends AppCompatActivity implements LoaderManager.L
     FloatingActionButton favoriteButton;
     @Bind(R.id.share_fab)
     FloatingActionButton shareButton;
-    ArrayList<Trailer> trailerList;
-    ArrayList<Review> reviewList;
-    TrailerAdapter trailerAdapter;
-    ReviewAdapter reviewAdapter;
     @Bind(R.id.trailersRecyclerView)
     RecyclerView trailersRecyclerView;
     @Bind(R.id.reviewsRecyclerView)
     RecyclerView reviewsRecyclerView;
+    @Bind(R.id.movie_detail_container)
+    NestedScrollView mScrollView;
+    //List
+    ArrayList<Trailer> trailerList;
+    ArrayList<Review> reviewList;
+    TrailerAdapter trailerAdapter;
+    ReviewAdapter reviewAdapter;
+    private String TRAILER_EXTRA = "trailer_extra";
+    private String REVIEW_EXTRA = "review_extra";
+    private String FAVORITE_EXTRA = "favorite_extra";
+    private String SCROLL_POSITION = "SCROLL_POSITION";
+    //other varaíables
     private boolean isFavorite;
     private Bitmap posterBitmap;
     private Bitmap backdropBitmap;
+    private int[] mPosition;
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        //store the scroll view
+        outState.putIntArray(SCROLL_POSITION,
+                new int[]{mScrollView.getScrollX(), mScrollView.getScrollY()});
+        //store the trailer list
+        if (trailerList != null) {
+            outState.putParcelableArrayList(TRAILER_EXTRA, trailerList);
+        }
+        //store the review list
+        if (reviewList != null) {
+            outState.putParcelableArrayList(REVIEW_EXTRA, reviewList);
+        }
+    }
+
+    //update & save their value on onPause & onResume.
+    @Override
+    protected void onPause() {
+        super.onPause();
+        scrollX = mScrollView.getScrollX();
+        scrollY = mScrollView.getScrollY();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+//this is important. scrollTo doesn't work in main thread.
+        mScrollView.post(new Runnable() {
+            @Override
+            public void run() {
+                mScrollView.scrollTo(scrollX, scrollY);
+            }
+        });
+    }
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -96,17 +150,29 @@ public class DetailActivity extends AppCompatActivity implements LoaderManager.L
         ButterKnife.bind(this);
         //get data from intent
         movie = getIntent().getParcelableExtra("movie");
+        // run the IsFavorite asynstask class
+        //this class will check the current movie is in favorite list or not
+        // and set the status of favoriteButton accordingly
+        new IsFavorite().execute();
 
-        if (savedInstanceState == null) {
-            // Create the detail fragment and add it to the activity
-            // using a fragment transaction.
-            Bundle arguments = new Bundle();
-            arguments.putParcelable("movie", movie);
+        if (savedInstanceState != null) {
+            if (savedInstanceState.getParcelableArrayList(TRAILER_EXTRA) != null) {
+                //get the restored trailers
+                trailerList = savedInstanceState.getParcelableArrayList(TRAILER_EXTRA);
+            }
+            if (savedInstanceState.getParcelableArrayList(REVIEW_EXTRA) != null) {
+                //get the restored review
+                reviewList = savedInstanceState.getParcelableArrayList(REVIEW_EXTRA);
+            }
+            if (savedInstanceState.getIntArray(SCROLL_POSITION) != null) {
+                //get the restored scroll position
+                mPosition = savedInstanceState.getIntArray(SCROLL_POSITION);
+            }
         }
 
+
+        //set the view in this layout IN THIS WAY ONLY WHEN the internet connection is available
         if (isNetworkAvailable()) {
-            //the internet connection available
-            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
             getSupportActionBar().setTitle(movie.getTitle());
             //set each view with specific text or images
             Picasso.with(this).load(TMDB_IMAGE_PATH + movie.getBackdrop()).placeholder(R.drawable.placeholder).error(R.drawable.placeholder).into(toolImage);
@@ -117,69 +183,56 @@ public class DetailActivity extends AppCompatActivity implements LoaderManager.L
             ratingTextView.setText(getString(R.string.Rating) + " " + Double.toString(movie.getRating()) + "/10");
             releaseTextView.setText(getString(R.string.release_on) + " " + movie.getReleaseDate());
             overviewTextView.setText(movie.getOverview());
-            new FetchTrailers().execute();
-            new FetchReviews().execute();
 
-            //add click listener to open the clicked reviews or trailers
-            trailersRecyclerView.addOnItemTouchListener(new RecyclerClickListener(getApplicationContext(), new RecyclerClickListener.OnItemClickListener() {
-                @Override
-                public void onItemClick(View view, int position) {
-                    String url = "https://www.youtube.com/watch?v=".concat(trailerList.get(position).getKey());
-                    Intent i = new Intent(Intent.ACTION_VIEW);
-                    i.setData(Uri.parse(url));
-                    startActivity(i);
-                }
-
-            }));
-
-            //add click listener to open the clicked reviews or trailers
-            reviewsRecyclerView.addOnItemTouchListener(new RecyclerClickListener(getApplicationContext(), new RecyclerClickListener.OnItemClickListener() {
-                @Override
-                public void onItemClick(View view, int position) {
-                    Intent i = new Intent(Intent.ACTION_VIEW);
-                    i.setData(Uri.parse(reviewList.get(position).getUrl()));
-                    startActivity(i);
-                }
-            }));
-
+            if (trailerList != null) {
+                //The trailerList already stored in saveInstance, restore it
+                trailerList = savedInstanceState.getParcelableArrayList(TRAILER_EXTRA);
+                trailerAdapter = new TrailerAdapter(this, trailerList);
+                LinearLayoutManager trailerLayoutManager = new LinearLayoutManager(getApplicationContext(), LinearLayoutManager.HORIZONTAL, false);
+                trailersRecyclerView.setLayoutManager(trailerLayoutManager);
+                trailersRecyclerView.setAdapter(trailerAdapter);
+            } else {
+                //haven't saved, fetch new trailers
+                new FetchTrailers().execute();
+            }
+            if (reviewList != null) {
+                //the reviewlist already store in saveInstance, restore it
+                reviewList = savedInstanceState.getParcelableArrayList(REVIEW_EXTRA);
+                reviewAdapter = new ReviewAdapter(this, reviewList);
+                LinearLayoutManager reviewLayoutManager = new LinearLayoutManager(getApplicationContext());
+                reviewsRecyclerView.setLayoutManager(reviewLayoutManager);
+                reviewsRecyclerView.setAdapter(reviewAdapter);
+            } else {
+                //haven't save, fetch new reviews
+                new FetchReviews().execute();
+            }
         } else {
-            // if no internet connection, load the information from the database
+            // if no internet connection and the movie is favorite, load the information from the database
             getLoaderManager().initLoader(EXISTING_MOVIE_LOADER, null, this);
+            Toast.makeText(getApplicationContext(), getString(R.string.no_connection), Toast.LENGTH_SHORT).show();
         }
 
-
-        //AsyncTask class to check whether the current movie is favorite (already exists in the database)
-        new AsyncTask<Void, Void, Integer>() {
+        //add click listener to open the clicked reviews or trailers
+        trailersRecyclerView.addOnItemTouchListener(new RecyclerClickListener(getApplicationContext(), new RecyclerClickListener.OnItemClickListener() {
             @Override
-            protected Integer doInBackground(Void... voids) {
-                Cursor cursor = getApplicationContext().getContentResolver().query(
-                        MovieContract.MovieEntry.CONTENT_URI,
-                        null,   // projection
-                        MovieContract.MovieEntry.COLUMN_MOVIE_ID + " = ?", // selection
-                        new String[]{movie.getId()},   // selectionArgs
-                        null    // sort order
-                );
-                int numRows = cursor.getCount();
-                Log.i(LOG_TAG, "abc " + " " + Integer.toString(numRows));
-                cursor.close();
-                return numRows;
+            public void onItemClick(View view, int position) {
+                String url = "https://www.youtube.com/watch?v=".concat(trailerList.get(position).getKey());
+                Intent i = new Intent(Intent.ACTION_VIEW);
+                i.setData(Uri.parse(url));
+                startActivity(i);
             }
-
+        }));
+        //add click listener to open the clicked reviews or trailers
+        reviewsRecyclerView.addOnItemTouchListener(new RecyclerClickListener(getApplicationContext(), new RecyclerClickListener.OnItemClickListener() {
             @Override
-            protected void onPostExecute(Integer numRows) {
-                if (numRows == 1) {
-                    //the movie already exists in the database
-                    isFavorite = true;
-                    favoriteButton.setImageResource(R.drawable.delete_fav);
-                } else {
-                    //the movie not exist in the database
-                    isFavorite = false;
-                    favoriteButton.setImageResource(R.drawable.add_fav);
-                }
+            public void onItemClick(View view, int position) {
+                Intent i = new Intent(Intent.ACTION_VIEW);
+                i.setData(Uri.parse(reviewList.get(position).getUrl()));
+                startActivity(i);
             }
-        }.execute();
+        }));
 
-
+        //click listener allows user to save/ delete a movie into/out of their favorite list
         favoriteButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -211,7 +264,22 @@ public class DetailActivity extends AppCompatActivity implements LoaderManager.L
                 startActivity(Intent.createChooser(share, "Share Trailer!"));
             }
         });
+
+        //if the scrren was rotated
+        //below code will restore the scroll position before rotating
+        if (mPosition != null) {
+            appBarLayout.setExpanded(false);
+            Log.i("abcdef onCreate " + Integer.toString(mPosition[0]), Integer.toString(mPosition[1]));
+            mScrollView.post(new Runnable() {
+                @Override
+                public void run() {
+                    mScrollView.smoothScrollTo(mPosition[0], mPosition[1]);
+                }
+            });
+        }
+
     }
+
 
     /**
      * Create the loader to load the information of the movie from database using the movie id
@@ -289,8 +357,15 @@ public class DetailActivity extends AppCompatActivity implements LoaderManager.L
         return activeNetworkInfo != null && activeNetworkInfo.isConnected();
     }
 
+
     //Aysnc task class to delete a favorite movie from the sqlite
     private class DeleteTheFavMovie extends AsyncTask<Object, Object, Integer> {
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+            isFavorite = false;
+        }
+
         @Override
         protected Integer doInBackground(Object... params) {
             return getApplicationContext().getContentResolver().delete(
@@ -311,6 +386,13 @@ public class DetailActivity extends AppCompatActivity implements LoaderManager.L
     //Aysnc task class to add a favorite movie from the sqlite
     private class AddTheFavMovie extends AsyncTask<Object, Object, Uri> {
         @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+            isFavorite = true;
+        }
+
+        //insert the movie into favorite database and favorite list
+        @Override
         protected Uri doInBackground(Object... params) {
             ContentValues values = new ContentValues();
             values.put(MovieContract.MovieEntry.COLUMN_MOVIE_ID, movie.getId());
@@ -326,6 +408,7 @@ public class DetailActivity extends AppCompatActivity implements LoaderManager.L
                     values);
         }
 
+        //adjust other view, buttons accordingly to the new changes
         @Override
         protected void onPostExecute(Uri uri) {
             favoriteButton.setImageResource(R.drawable.delete_fav);
@@ -334,13 +417,11 @@ public class DetailActivity extends AppCompatActivity implements LoaderManager.L
         }
     }
 
+
     // Async task class to fetch the trailers
     private class FetchTrailers extends AsyncTask<Object, Object, Void> {
-
-
         @Override
         protected void onPreExecute() {
-
         }
 
         @Override
@@ -378,11 +459,8 @@ public class DetailActivity extends AppCompatActivity implements LoaderManager.L
 
     //Async task class to fetch the reviews
     private class FetchReviews extends AsyncTask<Object, Object, Void> {
-
-
         @Override
         protected void onPreExecute() {
-
         }
 
         @Override
@@ -418,5 +496,37 @@ public class DetailActivity extends AppCompatActivity implements LoaderManager.L
             return null;
         }
     }
+
+    //AsyncTask class to check whether the current movie is favorite (already exists in the database)
+    private class IsFavorite extends AsyncTask<Void, Void, Integer> {
+        //request the cursor containing the current movie using movie.id
+        @Override
+        protected Integer doInBackground(Void... voids) {
+            Cursor cursor = getApplicationContext().getContentResolver().query(
+                    MovieContract.MovieEntry.CONTENT_URI,
+                    null,   // projection
+                    MovieContract.MovieEntry.COLUMN_MOVIE_ID + " = ?", // selection
+                    new String[]{movie.getId()},   // selectionArgs
+                    null    // sort order
+            );
+            int numRows = cursor.getCount();
+            cursor.close();
+            return numRows;
+        }
+
+        @Override
+        protected void onPostExecute(Integer numRows) {
+            if (numRows == 1) {
+                //the movie already exists in the database
+                isFavorite = true;
+                favoriteButton.setImageResource(R.drawable.delete_fav);
+            } else {
+                //the movie not exist in the database
+                isFavorite = false;
+                favoriteButton.setImageResource(R.drawable.add_fav);
+            }
+        }
+    }
+
 }
 

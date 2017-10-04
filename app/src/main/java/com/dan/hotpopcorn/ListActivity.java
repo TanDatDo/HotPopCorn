@@ -7,6 +7,7 @@ import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Parcelable;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.GridLayoutManager;
 import android.support.v7.widget.RecyclerView;
@@ -63,15 +64,58 @@ public class ListActivity extends AppCompatActivity {
         mFavoriteAdapter = new MovieAdapter(this);
         mOfflineFavoriteAdapter = new OfflineFavoriteAdapter(this);
 
+        //when the screen is rotated
         if (savedInstanceState != null) {
-            mPopularAdapter.setMovieList(savedInstanceState.<Movie>getParcelableArrayList("POP"));
-            mRatedAdapter.setMovieList(savedInstanceState.<Movie>getParcelableArrayList("RATED"));
+            //when there is data stored in saveInstanceState
+            //get the current SORT_BY ò menu selected
             SORT_BY = savedInstanceState.getString("SORT_BY");
+            switch (SORT_BY) {
+                case "POPULAR":
+                    popularList = savedInstanceState.getParcelableArrayList("POPULAR");
+                    if (isNetworkAvailable()) {
+                        emptyImageView.setVisibility(View.GONE);
+                        mRecyclerView.setVisibility(View.VISIBLE);
+                        mPopularAdapter.setMovieList(popularList);
+                        mRecyclerView.setAdapter(mPopularAdapter);
+                    } else {
+                        mRecyclerView.setVisibility(View.GONE);
+                        emptyImageView.setVisibility(View.VISIBLE);
+                    }
+                    break;
+                case "RATED":
+                    ratedList = savedInstanceState.getParcelableArrayList("RATED");
+                    if (isNetworkAvailable()) {
+                        emptyImageView.setVisibility(View.GONE);
+                        mRecyclerView.setVisibility(View.VISIBLE);
+                        mRatedAdapter.setMovieList(ratedList);
+                        mRecyclerView.setAdapter(mRatedAdapter);
+                    } else {
+                        mRecyclerView.setVisibility(View.GONE);
+                        emptyImageView.setVisibility(View.VISIBLE);
+                    }
+                    break;
+                case "FAVORITE":
+                    favoriteList = savedInstanceState.getParcelableArrayList("FAVORITE");
+                    if (isNetworkAvailable()) {
+                        emptyImageView.setVisibility(View.GONE);
+                        mRecyclerView.setVisibility(View.VISIBLE);
+                        mFavoriteAdapter.setMovieList(favoriteList);
+                        mRecyclerView.setAdapter(mFavoriteAdapter);
+                    } else {
+                        emptyImageView.setVisibility(View.GONE);
+                        mRecyclerView.setVisibility(View.VISIBLE);
+                        mOfflineFavoriteAdapter.setMovieList(favoriteList);
+                        mRecyclerView.setAdapter(mOfflineFavoriteAdapter);
+                    }
+            }
+
+        } else {
+            //load new data when there is no stored data in onSaveInstanceState
+            setupRecyclerView();
         }
 
 
         //set the grid view/ recycle view with either the popular list or rated list
-        setupRecyclerView();
 
         //add listener to each item in the grid view. navigate to detail activity when item is clicked
         mRecyclerView.addOnItemTouchListener(new RecyclerClickListener(this, new RecyclerClickListener.OnItemClickListener() {
@@ -96,6 +140,31 @@ public class ListActivity extends AppCompatActivity {
             }
         }));
     }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        //saving data when orientation change trigger
+        //saving data before onDestroy happens
+        //onSaveInstance is called before going to another activity or orientation change
+        outState.putParcelableArrayList("RATED", (ArrayList<? extends Parcelable>) ratedList);
+        outState.putParcelableArrayList("POPULAR", (ArrayList<? extends Parcelable>) popularList);
+        outState.putParcelableArrayList("FAVORITE", (ArrayList<? extends Parcelable>) favoriteList);
+        outState.putString("SORT_BY", SORT_BY);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (SORT_BY == "FAVORITE") {
+            new GetFavorite().execute();
+        } else if (!isNetworkAvailable()) {
+            Toast.makeText(getApplicationContext(), getString(R.string.no_connection), Toast.LENGTH_SHORT).show();
+            mRecyclerView.setVisibility(View.GONE);
+            emptyImageView.setVisibility(View.VISIBLE);
+        }
+    }
+
 
     // options menu allowed user to sort movie by either popularity or rating
     @Override
@@ -313,8 +382,8 @@ public class ListActivity extends AppCompatActivity {
                 mRecyclerView.setAdapter(mFavoriteAdapter);
             } else {
                 mOfflineFavoriteAdapter.setMovieList(favoriteList);
+                Toast.makeText(getApplicationContext(), getString(R.string.no_connection), Toast.LENGTH_SHORT).show();
                 mRecyclerView.setAdapter(mOfflineFavoriteAdapter);
-
             }
         }
     }
